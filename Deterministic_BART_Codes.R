@@ -1,15 +1,26 @@
----
-title: "project-stage1-AbtinMogharabin"
-author: "Abtin Mogharabin"
-date: "2024-05-20"
-output:
-  html_document: default
-  word_document: default
----
+# Load required libraries
+library(caret)
+library(e1071)
+library(mice)
+library(dplyr)
+library(readr)
+library(utils)
+library(xgboost)
+library(neuralnet)
+library(randomForest)
+library(caTools)
+library(nnet)
+library(car)
+library(glmnet)
+library(tidyr)
+library(ggplot2)
+library(gridExtra)
 
+
+'
 The Balloon Analogue Risk Task (BART) is a popular tool for assessing risk-taking behavior. In this task, participants see a balloon on a computer screen, which they can inflate by pressing a key to earn a reward. However, each pump carries the risk of the balloon bursting, which would result in losing the reward. Participants must decide when to bank their earnings to maximize their total reward.
 
-The data provided for this project comes from an experiment investigating the impact of alcohol consumption on risk-taking. This experiment used a within-subjects design, where participants were given three different doses of alcohol before completing the BART. Each participant went through three blocks of trials, each with a different probability of the balloon bursting. The blocks, consisting of 30 trials each, were presented in random order, and participants were informed of the burst probability before each block. The reward for each pump was a percentage of the money earned so far. In this project report, we conduct an analysis on the elements that effect the participnts' risk-taking and their reward.
+The data provided for this project comes from an experiment investigating the impact of alcohol consumption on risk-taking. This experiment used a within-subjects design, where participants were given three different doses of alcohol before completing the BART. Each participant went through three blocks of trials, each with a different probability of the balloon bursting. The blocks, consisting of 30 trials each, were presented in random order, and participants were informed of the burst probability before each block. The reward for each pump was a percentage of the money earned so far. In this project report, we conduct an analysis on the elements that effect the participnts` risk-taking and their reward.
 
 The experiment data is shared in a folder containing `name-id.txt` files for each participant separately. Experiment design consists of 3 sessions of participants with different conditions (sober, tipsy, drunk), 3 different burst probabilities i different sessions (0.1, 0.15, 0.2), and a total of 3 trials per block. Meaning that each participant has a total of 90 rows of data in their data file. 
 
@@ -20,43 +31,38 @@ The relationship between sessions and conditions is claimed to be randomized, an
 [2 2 3 3 3 1 1 2 2 1 1 1 3 3 2 3 2 1]
 
 [1 3 1 1 2 2 3 1 3 3 3 2 1 2 3 2 1 2]
-
-```{r setup, include=FALSE}
+'
 set.seed(123)
 knitr::opts_chunk$set(
-	echo = FALSE,
-	message = FALSE,
-	warning = FALSE
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
 )
 # the condition_info array
 condition_info <- matrix(c(3, 1, 2, 2, 1, 3, 2, 3, 1, 2, 2, 3, 2, 1, 1, 1, 3, 3,
                            2, 2, 3, 3, 3, 1, 1, 2, 2, 1, 1, 1, 3, 3, 2, 3, 2, 1,
                            1, 3, 1, 1, 2, 2, 3, 1, 3, 3, 3, 2, 1, 2, 3, 2, 1, 2),
                          nrow = 3, byrow = TRUE)
-```
+
 
 ## Data preperation
-
+'
 The first step of the project is to combine all the data files into a single, organized data frame. In this step, I extracted the data of different patients from their corresponding txt files. Then I organized all the information provided in the data and generated the following 10 variables:
 
-- participant: identifies the participant. Although it's numerical, it's essentially categorical since it represents different people.
+- participant: identifies the participant. Although its numerical, its essentially categorical since it represents different people.
 - condition: represents the condition of each participant in each session
 - p_burst: represents the probability of a balloon bursting in each session
 - trial: represents the trial number of each participant in each session
 - pumps: the number of times a balloon is pumped for each participant in each point of a session
 - cash: the amount of money gained in each trial
 - total: total reward of a block
-- session: an integer representing a session (1, 2, or 3
+- session: an integer representing a session (1, 2, or 3)
 - block: indicates which block the trial belongs to
 - explosion: indicates if the balloon burst
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(dplyr)
-library(readr)
-library(utils)
+'
 
 # List and sort the text files
-files <- list.files(path = "C:\\Users\\ACER\\Downloads\\412-project\\bart-data\\bart-data", pattern = "\\.txt$", full.names = TRUE)
+files <- list.files(path = "bart-data\\bart-data", pattern = "\\.txt$", full.names = TRUE)
 files <- sort(files)
 
 # Initialize an empty dataframe
@@ -88,7 +94,7 @@ for (file in files) {
                      `cash` = col_double(),
                      `total` = col_double()
                    ))
-                     
+  
   # Extract session number
   session_str <- strsplit(basename(file), "_")[[1]][2]
   session <- as.numeric(sub("\\.txt$", "", session_str)) - 1
@@ -141,23 +147,22 @@ standardize <- function(x) {
 }
 
 print(sample_n(final_df, 10))
-```
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
+
 final_df$participant <- as.factor(final_df$participant)
 final_df$condition <- as.factor(final_df$condition)
 final_df$session <- as.factor(final_df$session)
 final_df$block <- as.factor(final_df$block)
 final_df$trial <- as.factor(final_df$trial)
 final_df$p_burst <- as.factor(final_df$p_burst/100)
-```
+
 
 ## Missingness
-
-Considering that our data does not have any missing data, we generate them by ourselves. For this purpose, I randomly deleted 25% of the data from each variable. Then, I decided on a suitable imputation method to restore the missing values. In this step, I directly used Predictive Mean Matching  for numerical variables and Polynomial Regression imputation for factors. The reason I didn't try Single Imputation is that my data was specifically designed with different participant and different conditions of participants in mind. These differences are critical to have the best analysis of the data later. If we just use Single Imputation and replace the missing values of all variables with the same mean/median values, these differences would be lost. At the same time, NOCB  and LOCF were not suitable because they would have reslted the data of different participants and different conditions being mixed together.
+'
+Considering that our data does not have any missing data, we generate them by ourselves. For this purpose, I randomly deleted 25% of the data from each variable. Then, I decided on a suitable imputation method to restore the missing values. In this step, I directly used Predictive Mean Matching  for numerical variables and Polynomial Regression imputation for factors. The reason I didnt try Single Imputation is that my data was specifically designed with different participant and different conditions of participants in mind. These differences are critical to have the best analysis of the data later. If we just use Single Imputation and replace the missing values of all variables with the same mean/median values, these differences would be lost. At the same time, NOCB  and LOCF were not suitable because they would have reslted the data of different participants and different conditions being mixed together.
 
 Now, if we collapse the 4060 rows (90 rows * 17 participants) of our generated above data with respect to the trials in a block, we would be able to use a new version of this data with 162 rows (3 * 3 * 17) and we can generate 6 new useful variables:
-
+  
 - mNOP: mean number of pumps across trials, within a block
 - pC: proportion of cashed trials in a block
 - pE: proportion of explosions in a block (with respect to the total number of pumps in a block)
@@ -166,10 +171,7 @@ Now, if we collapse the 4060 rows (90 rows * 17 participants) of our generated a
 - NOE: number of explosions in each block for each participant
 
 In the end, we set the suitable type for each variable (factor/numeric) and check the summary of our new imputed data and new variables.
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(mice)
-library(dplyr)
+'
 
 # Create a copy of final_df to introduce missing values
 df_missing <- final_df
@@ -229,16 +231,9 @@ imputed_block <- mice(complete_data, m = 1, method = methods_block, maxit = 5, s
 complete_data$block <- complete(imputed_block)$block
 head(complete_data)
 final_df = complete_data
-```
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
 head(final_df)
 str(final_df)
-
-```
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(dplyr)
 
 # Determine the type of each variable in the dataframe
 variable_types <- sapply(complete_data, function(x) if(is.numeric(x)) "numeric" else "factor")
@@ -271,24 +266,21 @@ for (i in 1:(ncol(complete_data) - 1)) {
   }
 }
 
-```
 
 ## EDA and CDA
-
+'
 Now we visualize and apply suitable statistical tests to analyze the data. The focus of my analysis would be the following research question:
-
-- How does the participants' condition effect their maximum risk taking (maximum number of times that participants pump a balloon)?
-- How does the participants' condition effect their average risk taking?
-- How does the participants' prior on burst probability of balloons effect their maximum risk taking?
-- How does the participants' prior on burst probability of balloons effect their average risk taking?
-- What about the pumps that lead to explosions? Does increase risk-taking in low burst probabilities result in a significantly higher number of explosions?
-- Do different burst probabilities have any effects on total rewards?
-- Do different conditions have any effects on total rewards?
-- How do individual participants differ in their mean total rewards across trials?
-- How do individual participants differ in their mean number of pumps in different conditions?
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(ggplot2)
+  
+  - How does the participants` condition effect their maximum risk taking (maximum number of times that participants pump a balloon)?
+  - How does the participants` condition effect their average risk taking?
+  - How does the participants` prior on burst probability of balloons effect their maximum risk taking?
+  - How does the participants` prior on burst probability of balloons effect their average risk taking?
+  - What about the pumps that lead to explosions? Does increase risk-taking in low burst probabilities result in a significantly higher number of explosions?
+  - Do different burst probabilities have any effects on total rewards?
+  - Do different conditions have any effects on total rewards?
+  - How do individual participants differ in their mean total rewards across trials?
+  - How do individual participants differ in their mean number of pumps in different conditions?
+'
 
 fina_df = complete_data
 
@@ -312,10 +304,11 @@ g <- ggplot(max_pumps_df, aes(x = participant, y = max_pumps, color = condition,
 
 # Print the plot
 print(g)
-```
-We can observe a general trend here: although different alcohol condition doesn't have much of an effect of the maximum risk-taking of participants, the differences in probability of burst seems to have a rather significant effect. We can see that higher probability of burst values have resulted participants to have a smaller maximum pump number. We check this using a two-way anova test.
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
+'
+We can observe a general trend here: although different alcohol condition doesnt have much of an effect of the maximum risk-taking of participants, the differences in probability of burst seems to have a rather significant effect. We can see that higher probability of burst values have resulted participants to have a smaller maximum pump number. We check this using a two-way anova test.
+'
+
 # Calculate the max number of pumps for each participant, condition, and p_burst
 final_df <- final_df %>%
   mutate(p_burst = as.factor(p_burst),
@@ -324,18 +317,19 @@ final_df <- final_df %>%
 # Run the two-way ANOVA
 anova_result <- aov(max_pumps ~ p_burst * condition, data = max_pumps_df)
 summary(anova_result)
-```
-The p-value is extremely small. It is clear that we can reject the null hypothesis and conclude a significant effect from burst probability on maximum number of pumps. While the condition has a big p-value and we fail to find any significant effect from condition to maximum risk-taking of participants. And the result of the Tukey multiple comparisons of means confirms that as burst probability increases the maximum pump number decreases. 
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
+'
+The p-value is extremely small. It is clear that we can reject the null hypothesis and conclude a significant effect from burst probability on maximum number of pumps. While the condition has a big p-value and we fail to find any significant effect from condition to maximum risk-taking of participants. And the result of the Tukey multiple comparisons of means confirms that as burst probability increases the maximum pump number decreases. 
+'
+
 # Post-hoc test for p_burst effect
 posthoc_p_burst <- TukeyHSD(anova_result, "p_burst")
 print(posthoc_p_burst)
-```
 
+'
 Now we check if the average number of pumps is also as significantly effected as the maximum number of pumps. Especially, we need to check if the condition of participants shows any significant effect on their average risk-taking.
+'
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
 # Calculate the mean number of pumps for each participant, condition, and p_burst
 mean_pumps_df <- final_df %>%
   group_by(participant, condition, p_burst) %>%
@@ -356,11 +350,10 @@ g <- ggplot(mean_pumps_df, aes(x = participant, y = mean_pumps, color = conditio
 
 # Print the plot
 print(g)
-```
-Similar to the previous part, we observe an effect from burst probability but no effect from the condition. We use another two-way anova text and check this.
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(car)
+'
+Similar to the previous part, we observe an effect from burst probability but no effect from the condition. We use another two-way anova text and check this.
+'
 
 # Calculate the mean number of pumps for each participant, condition, and p_burst
 mean_pumps_df <- final_df %>%
@@ -376,20 +369,20 @@ mean_pumps_df <- mean_pumps_df %>%
 # Run the two-way ANOVA
 anova_result <- aov(mean_pumps ~ p_burst * condition, data = mean_pumps_df)
 summary(anova_result)
-```
-We again observe a significant effect from p_burst but no effect from condition.
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
+'
+We again observe a significant effect from p_burst but no effect from condition.
+'
+
 # Post-hoc test for p_burst effect
 posthoc_p_burst <- TukeyHSD(anova_result, "p_burst")
 print(posthoc_p_burst)
-```
-Applying Tukey multiple comparisons of means confirms shows us that higher burst probabilities decrease participants' average risk-taking.
+
+'
+Applying Tukey multiple comparisons of means confirms shows us that higher burst probabilities decrease participants average risk-taking.
 
 The following 2 plots allow us to further confirm the effect of burst probability on risk-taking. But we also observe a new observation: although lower burst probabilities show a higher risk-taking, they also show a higher variance. Indicating that although in low burst probabilities some participants take a lot of risks, but there are also some participants that still remain careful.
-
-```{r echo=FALSE, fig.height=6, fig.width=14, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(gridExtra)
+'
 
 # Calculate the grand mean of the number of pumps
 grand_mean_pumps <- mean(final_df$pumps, na.rm = TRUE)
@@ -434,21 +427,21 @@ plot2 <- ggplot(summary_condition, aes(x = trial, y = mean_pumps, color = condit
   theme(legend.position = "top")
 
 grid.arrange(plot1, plot2, ncol = 2, widths=c(10,10))
-```
 
-To test this, we apply Levene's Test and observe a significant difference in the variances of the mean number of pumps across different burst probabilities. The p-value is extremely small whic means that the null hypothesis (that the variances are equal) can be rejected with high confidence. 
+'
+To test this, we apply Levenes Test and observe a significant difference in the variances of the mean number of pumps across different burst probabilities. The p-value is extremely small whic means that the null hypothesis (that the variances are equal) can be rejected with high confidence. 
+'
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
 # Perform Levene's Test
 levene_test_result <- leveneTest(pumps ~ as.factor(p_burst), data = final_df)
 
 # Print the results of Levene's Test
 print(levene_test_result)
-```
 
-We already observed the surprising result that the condition of participants, in general, doesn't have an effect on the number of pumps. Now, we analyze this across different participants. In the following plot, we observe that different participants seem to have many differences in this regard.
+'
+We already observed the surprising result that the condition of participants, in general, doesnt have an effect on the number of pumps. Now, we analyze this across different participants. In the following plot, we observe that different participants seem to have many differences in this regard.
+'
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
 # Number of Pumps by Participant and Condition
 g <- ggplot(final_df, aes(x = participant, y = pumps, fill = condition)) +
   geom_bar(stat = "summary", fun = "mean", position = "dodge") +
@@ -457,11 +450,11 @@ g <- ggplot(final_df, aes(x = participant, y = pumps, fill = condition)) +
   scale_fill_brewer(palette = "Set2")
 
 print(g)
-```
 
-This shows the reason behind the surprising conclusiojn we had on the effect of condition on pumps before. It seems the reason we failed to find a significant effect before is that alcohol (condition) has vastly different effects on different participants. It increases the risk-taking of some participants, decreases the risk-taking of another group of participant, and it doesn't effect some participants. This is why  testing the grand average between all participants gave us the conclusion that "condition doesn't effect risk-taking"! Because the effect of alcohol on different participants could be the total opposite of each other. Now, we conduct independents anova tests for different participants and test this:
+'
+This shows the reason behind the surprising conclusiojn we had on the effect of condition on pumps before. It seems the reason we failed to find a significant effect before is that alcohol (condition) has vastly different effects on different participants. It increases the risk-taking of some participants, decreases the risk-taking of another group of participant, and it doesnt effect some participants. This is why  testing the grand average between all participants gave us the conclusion that "condition doesnt effect risk-taking"! Because the effect of alcohol on different participants could be the total opposite of each other. Now, we conduct independents anova tests for different participants and test this:
+'
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
 # Loop through participants 1 to 17
 for (participant_id in 1:17) {
   
@@ -481,13 +474,13 @@ for (participant_id in 1:17) {
     cat("Participant", participant_id, ": No significant effect (p-value =", p_value, ")\n")
   }
 }
-```
 
+'
 Now the results sound more logical. We observe that alcohol has no significant effect on the number of pumps of 9 participants. But it has significant effects on the other 8 participants.
 
 Now, we check if different burst probabilities have a significant effect on the number of explosions.
+'
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
 # Calculate the mean number of pumps by participant, condition, p_burst, and explosion
 mean_pumps_explosion <- final_df %>%
   group_by(participant, condition, p_burst, explosion) %>%
@@ -512,10 +505,11 @@ g <- ggplot(mean_pumps_explosion_for_plot, aes(x = p_burst, y = mean_pumps, colo
 
 # Print the plot
 print(g)
-```
 
+'
 We observe a clear connection between them. We also observe that the higher risk average pump number comes from 0.1 burst probability from the cases that balloon has not exploded. For better p_burst vs explosion interpretation, we check the frequency table and odds ratio.
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
+'
+
 odds.ratio = function(x, conf.level=0.95) {
   OR = x[1,1] * x[2,2] / ( x[2,1] * x[1,2] )
   SE = sqrt(sum(1/x))
@@ -530,21 +524,14 @@ expl_mar=table(final_df$p_burst,final_df$explosion)
 
 print(expl_mar)
 odds.ratio(expl_mar)
-```
-We can observe that there is a statistically significant association p_burst and explosion. The odds of an explosion are lower in the higher p_burst values.The chi-square test of independence also confirms the dependence of explosion on p_burst.
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
+'
+We can observe that there is a statistically significant association p_burst and explosion. The odds of an explosion are lower in the higher p_burst values.The chi-square test of independence also confirms the dependence of explosion on p_burst.
+'
 chisq.test(expl_mar)
 
-```
-
-Now we check their mosaic plot.
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
 mosaicplot(table(final_df$explosion, final_df$p_burst),main='Mosaic plot for Burst Probability vs Explosion',col=c("darkgreen","royalblue","orange"))
-```
-We can observe that burst probability 0.1 has the smallest rate of explosion and the largest rate of not exploding. This shows us that participants seems to have a good risk-taking in general and they don't get overly reckless in p_burst=0.1 just because they think there is a lower chance of explosion.
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
 # Calculate the mean and standard error for each combination of trial, condition, and p_burst
 mean_se_total_per_trial <- final_df %>%
   group_by(trial, condition, p_burst) %>%
@@ -569,11 +556,8 @@ plot <- ggplot(mean_se_total_per_trial, aes(x = trial, y = mean_total, color = p
 
 # Print the plot
 print(plot)
-```
 
-Now we check the differences between our participants in their process of gaining rewards. We observe a more stable increase in the rewards of our participants in the drunk condition compared to other conditions. While we observe the most variations for p_burst 0.1 and 0.2, where the participants think the balloons are the 'safest to pump' or 'the most dangerous to pump'. Which seems logical.
 
-```{r echo=FALSE, fig.height=8, fig.width=8, message=TRUE, warning=FALSE, paged.print=TRUE}
 # Calculate the average total rewards per participant
 avg_total_per_participant <- final_df %>%
   group_by(participant, condition, p_burst, trial) %>%
@@ -595,14 +579,9 @@ plot <- ggplot(subset_first_five, aes(x = as.numeric(trial), y = mean_total, col
 
 # Print the plot
 print(plot)
-```
 
 
-```{r echo=FALSE, fig.height=8, fig.width=8, message=TRUE, warning=FALSE, paged.print=TRUE}
 # Load necessary libraries
-library(dplyr)
-library(ggplot2)
-library(car)
 
 # Calculate the average total rewards per participant
 avg_total_per_participant <- final_df %>%
@@ -629,14 +608,8 @@ qqline(residuals(aov_model[[1]]))
 
 # Homogeneity of variances (if needed)
 leveneTest(mean_total ~ condition * p_burst * trial, data = avg_total_per_participant)
-```
 
 
-Now, we plot 3 line plots to do a simple deviant analysis on our key variables.The following plot visualizes the trial-score vectors for three different variables: burst probability, condition, and participant. We identify the most deviant values within each variable type based on the mean squared deviation from the grand mean. The red line represents the trial-score vector for the most deviant value within the variable type, the green line represents the grand mean across all trials for the variable being analyzed, and the black lines show us the remaining (non-most-deviant) labels of each variable.
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(tidyr)
-library(dplyr)
 # Pivot the data to get vectors for participants, conditions, and burst probabilities
 participant_vectors <- final_df %>%
   select(trial, participant, total) %>%
@@ -660,10 +633,8 @@ colnames(p_burst_vectors)[2:4] <- c("0.1", "0.15", "0.2")
 
 # Combine these vectors into a single data frame
 vectors_df <- bind_cols(participant_vectors, condition_vectors[-1], p_burst_vectors[-1])
-```
 
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
 # Calculate the grand average for each trial
 grand_average <- final_df %>%
   group_by(trial) %>%
@@ -674,9 +645,8 @@ mean_squared_deviation <- function(x) {
   grand_mean <- mean(x, na.rm = TRUE)
   mean((x - grand_mean)^2, na.rm = TRUE)
 }
-```
 
-```{r echo=FALSE, fig.height=4, fig.width=9, message=TRUE, warning=FALSE, paged.print=TRUE}
+
 # Calculate the mean squared deviation for each column
 scores <- sapply(vectors_df[-1], mean_squared_deviation)
 
@@ -696,12 +666,12 @@ for (i in 1:length(iloc_indices)) {
   max_score_val <- colnames(vectors_df)[var_idx[idx_max]]
   var_vals <- colnames(vectors_df)[var_idx]
   sub_df <- vectors_df %>% select(trial, all_of(var_vals))
-
+  
   sub_df_long <- pivot_longer(sub_df, -trial, names_to = "variable", values_to = "value")
-
+  
   # Convert 'trial' to numeric
   sub_df_long$trial <- as.numeric(sub_df_long$trial)
-
+  
   # Create the plot
   p <- ggplot() +
     geom_line(data = grand_average, aes(x = as.numeric(trial), y = total, group = 1), color = 'green', size = 1.5, alpha = 0.8) +
@@ -711,34 +681,21 @@ for (i in 1:length(iloc_indices)) {
          x = 'Trials',
          y = 'Score') +
     theme_minimal()
-
+  
   plot_list[[i]] <- p
 }
 
 # Combine the plots into a single figure
 grid.arrange(grobs = plot_list, ncol = 3, top = "Deviant Analysis")
 
-```
 
 ## Statistical Modeling
-
-
-
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(glmnet)
 
 # Fit the logistic regression model
 logistic_model <- glm(explosion ~ condition + p_burst + pumps + session + participant, data = final_df, family = binomial)
 
 # Print the summary of the model
 summary(logistic_model)
-```
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-# Load necessary libraries
-library(glmnet)
-library(caret)
 
 # Convert p_burst to numeric and cube it
 final_df$pb <- as.numeric(as.character(final_df$p_burst))
@@ -767,13 +724,8 @@ summary(logistic_model)
 # Calculate VIF to check for multicollinearity
 vif(logistic_model)
 
-```
 
-```{r echo=FALSE, fig.height=8, fig.width=8, message=TRUE, warning=FALSE, paged.print=TRUE}
-# Logistic Regression
-library(caTools)
-library(caret)
-library(car)
+### Logistic Regression
 
 #final_df$explosion <- ifelse(final_df$explosion==TRUE, 1, 0)
 set.seed(123)  
@@ -807,12 +759,8 @@ final_cm <- confusionMatrix(as.factor(final_predicted_classes), as.factor(test_d
 print("Confusion Matrix for Test Set:")
 print(final_cm)
 
-```
 
-```{r echo=FALSE, fig.height=8, fig.width=8, message=TRUE, warning=FALSE, paged.print=TRUE}
-# Neural Networks
-library(nnet)
-
+### Neural Networks
 
 # Normalize the data
 normalize <- function(x) {
@@ -842,28 +790,28 @@ neuron_options <- c(1, 2, 4, 6, 8)
 results <- data.frame(Neurons = integer(), Accuracy = numeric())
 
 for (neurons in neuron_options) {
-    # Train the neural network model with the current configuration
-    nn_model <- nnet(explosion ~ condition_pb * session3 + pb * pumps + pb + participant, 
-                     data = train_data_normalized, size = neurons, decay = 0.1, maxit = 200, linout = TRUE)
-
-    # Predict on the test set
-    nn_predictions <- predict(nn_model, newdata = test_data_normalized, type = 'raw')
-
-    # Convert probabilities to binary outcomes (using 0.5 as the threshold)
-    nn_predicted_classes <- ifelse(nn_predictions > 0.5, 1, 0)
-
-    # Ensure the factor levels match
-    nn_predicted_classes <- factor(nn_predicted_classes, levels = c(0, 1))
-    actual_classes <- factor(test_data$explosion, levels = c(0, 1))
-
-    # Generate the confusion matrix
-    nn_confusion_matrix <- confusionMatrix(nn_predicted_classes, actual_classes)
-
-    # Calculate accuracy
-    accuracy <- nn_confusion_matrix$overall['Accuracy']
-
-    # Store the results
-    results <- rbind(results, data.frame(Neurons = neurons, Accuracy = accuracy))
+  # Train the neural network model with the current configuration
+  nn_model <- nnet(explosion ~ condition_pb * session3 + pb * pumps + pb + participant, 
+                   data = train_data_normalized, size = neurons, decay = 0.1, maxit = 200, linout = TRUE)
+  
+  # Predict on the test set
+  nn_predictions <- predict(nn_model, newdata = test_data_normalized, type = 'raw')
+  
+  # Convert probabilities to binary outcomes (using 0.5 as the threshold)
+  nn_predicted_classes <- ifelse(nn_predictions > 0.5, 1, 0)
+  
+  # Ensure the factor levels match
+  nn_predicted_classes <- factor(nn_predicted_classes, levels = c(0, 1))
+  actual_classes <- factor(test_data$explosion, levels = c(0, 1))
+  
+  # Generate the confusion matrix
+  nn_confusion_matrix <- confusionMatrix(nn_predicted_classes, actual_classes)
+  
+  # Calculate accuracy
+  accuracy <- nn_confusion_matrix$overall['Accuracy']
+  
+  # Store the results
+  results <- rbind(results, data.frame(Neurons = neurons, Accuracy = accuracy))
 }
 # Print the results
 print(results)
@@ -891,14 +839,8 @@ best_nn_confusion_matrix <- confusionMatrix(as.factor(best_nn_predicted_classes)
 # Print the confusion matrix
 print(best_nn_confusion_matrix)
 
-```
 
-
-```{r echo=FALSE, fig.height=8, fig.width=8, message=TRUE, warning=FALSE, paged.print=TRUE}
-# random forest
-library(randomForest)  # For random forest
-library(caret)         
-library(e1071)        
+### random forest       
 
 # Fine-tuning the Random Forest model using cross-validation
 # Define the tuning grid
@@ -947,13 +889,8 @@ ggplot(top_10_importance_df, aes(x = reorder(Variable, Overall), y = Overall, fi
   ylab("Importance") +
   ggtitle("Top 10 Variable Importance in Random Forest Model")
 
-```
 
-
-
-
-```{r echo=FALSE, fig.height=8, fig.width=8, message=TRUE, warning=FALSE, paged.print=TRUE}
-# XGBoost
+### XGBoost
 # Define the tuning grid
 tune_grid <- expand.grid(
   nrounds = c(50, 150),
@@ -990,10 +927,9 @@ tuned_xgb_predictions <- factor(ifelse(tuned_xgb_predictions > 0.5, 1, 0))
 tuned_xgb_confusion_matrix <- confusionMatrix(tuned_xgb_predictions, as.factor(test_data$explosion))
 print(tuned_xgb_confusion_matrix)
 
-```
 
-```{r echo=FALSE, fig.height=8, fig.width=8, message=TRUE, warning=FALSE, paged.print=TRUE}
-# SVM
+### SVM
+
 # Define the tuning grid
 tune_grid <- expand.grid(
   C = c(0.1, 1, 10),
@@ -1023,12 +959,6 @@ tuned_svm_predictions <- as.factor(ifelse(predict(tuned_svm_model, newdata = tes
 tuned_svm_confusion_matrix <- confusionMatrix( tuned_svm_predictions, as.factor(test_data$explosion))
 print(tuned_svm_confusion_matrix)
 
-```
-
-
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(caret)
 
 # Split the data into training and testing sets
 trainIndex <- createDataPartition(final_df$explosion, p = 0.7, list = FALSE)
@@ -1063,15 +993,7 @@ predictions <- ifelse(pred_probs > 0.5, 1, 0)
 # Calculate accuracy on the test set
 accuracy <- mean(predictions == y_test)
 print(paste("Test Set Accuracy:", accuracy))
-```
 
-
-
-
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(caret)
-library(nnet)
 
 train_data2 <- subset(train_data, p_burst != 0.15)
 test_data2<- subset(test_data, p_burst != 0.15)
@@ -1102,14 +1024,9 @@ final_cm <- confusionMatrix(test_predictions, test_data2$p_burst)
 print("Confusion Matrix for Test Set:")
 print(final_cm)
 
-```
 
-I did not print the summary of the model because of the high number of variables (they filled over 2 A4 pages) but the model coefficients look relatively logical. The highest effect in the burst probability prediction case from explosion the amount of pumps, and the amount of cash. Added to the effect of each participant. All of their effects followed our results in the EDA section. The 60% accuracy is not that bad considering the problematic data. A method like PCA could be suitable to improve the performance. But I didn't use it in this stage of the project because it would've made data analysis impossible here.
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-# Neural Networks
-library(neuralnet)
-library(caret)
-library(caTools)
+### Neural Networks
+
 set.seed(123)
 # Remove rows where p_burst is 0.15
 train_data2 <- subset(train_data, p_burst != 0.15)
@@ -1167,36 +1084,36 @@ results <- data.frame(Layers = character(), Kappa = numeric())
 confusion_matrices <- list()
 
 for (option in names(layer_options)) {
-    layers <- layer_options[[option]]
-    
-    # Convert layer configuration to string for storing in results
-    layers_str <- paste(layers, collapse = ", ")
-    
-    # Train the neural network model with the current configuration
-    nn_model <- neuralnet(as.vector(p_burst) ~ ., data = train_data_normalized, threshold = 0.001, hidden = neurons, linear.output = FALSE, stepmax =100000, act.fct = "logistic")
-
-    # Predict on the test set
-    nn_predictions <- predict(nn_model, test_data_normalized)
-
-    # Convert probabilities to binary outcomes
-    nn_predicted_classes <- ifelse(nn_predictions > 0.25, 1, 0)
-
-    # Ensure the factor levels match
-    nn_predicted_classes <- factor(nn_predicted_classes, levels = c(0, 1))
-    actual_classes <- factor(test_data_normalized$p_burst, labels = c(0, 1))
-
-    # Generate the confusion matrix
-    nn_confusion_matrix <- confusionMatrix(nn_predicted_classes[1:962], actual_classes)
-
-    # Calculate accuracy
-    kappa <- nn_confusion_matrix$overall['Kappa']
-
-    # Store the results
-    results <- rbind(results, data.frame(Layers = layers_str, Kappa = kappa))
-    confusion_matrices[[layers_str]] <- nn_confusion_matrix
-
-    print('one closer to the end!')
-    print(layers_str)
+  layers <- layer_options[[option]]
+  
+  # Convert layer configuration to string for storing in results
+  layers_str <- paste(layers, collapse = ", ")
+  
+  # Train the neural network model with the current configuration
+  nn_model <- neuralnet(as.vector(p_burst) ~ ., data = train_data_normalized, threshold = 0.001, hidden = neurons, linear.output = FALSE, stepmax =100000, act.fct = "logistic")
+  
+  # Predict on the test set
+  nn_predictions <- predict(nn_model, test_data_normalized)
+  
+  # Convert probabilities to binary outcomes
+  nn_predicted_classes <- ifelse(nn_predictions > 0.25, 1, 0)
+  
+  # Ensure the factor levels match
+  nn_predicted_classes <- factor(nn_predicted_classes, levels = c(0, 1))
+  actual_classes <- factor(test_data_normalized$p_burst, labels = c(0, 1))
+  
+  # Generate the confusion matrix
+  nn_confusion_matrix <- confusionMatrix(nn_predicted_classes[1:962], actual_classes)
+  
+  # Calculate accuracy
+  kappa <- nn_confusion_matrix$overall['Kappa']
+  
+  # Store the results
+  results <- rbind(results, data.frame(Layers = layers_str, Kappa = kappa))
+  confusion_matrices[[layers_str]] <- nn_confusion_matrix
+  
+  print('one closer to the end!')
+  print(layers_str)
 }
 
 
@@ -1213,14 +1130,9 @@ best_nn_confusion_matrix <- confusion_matrices[[best_layers_str]]
 
 # Print the confusion matrix
 print(best_nn_confusion_matrix)
-```
 
 
-```{r echo=FALSE, fig.height=8, fig.width=8, message=TRUE, warning=FALSE, paged.print=TRUE}
-# random forest
-library(randomForest)  # For random forest
-library(caret)         
-library(e1071)        
+### random forest       
 
 # Fine-tuning the Random Forest model using cross-validation
 # Define the tuning grid
@@ -1244,11 +1156,8 @@ tuned_rf_confusion_matrix <- confusionMatrix(tuned_rf_predictions, factor(test_d
 print(tuned_rf_confusion_matrix)
 
 
-```
+### SVM
 
-
-```{r echo=FALSE, fig.height=8, fig.width=8, message=TRUE, warning=FALSE, paged.print=TRUE}
-# SVM
 # Define the tuning grid
 tune_grid <- expand.grid(
   C = c(0.1, 1, 10),
@@ -1278,12 +1187,10 @@ tuned_svm_predictions <- predict(tuned_svm_model, newdata = test_data2)
 tuned_svm_confusion_matrix <- confusionMatrix( tuned_svm_predictions, as.factor(test_data2$p_burst))
 print(tuned_svm_confusion_matrix)
 
-```
 
 
-```{r echo=FALSE, fig.height=8, fig.width=8, message=TRUE, warning=FALSE, paged.print=TRUE}
+### XGBoost
 
-# XGBoost
 # Define the tuning grid
 tune_grid <- expand.grid(
   nrounds = c(50, 150),
@@ -1350,19 +1257,8 @@ ggplot(top_10_importance_df, aes(x = Feature, y = Gain, fill = color)) +
   coord_flip() +
   scale_fill_identity() +
   xlab("Features") +
-  ylab("Importance (Gain)") +
+  ylab("Importance (Gain)")
 
-
-```
-
-
-
-
-
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(caret)
-library(nnet)
 
 final_df$pumps_n <- (final_df$pumps - min(final_df$pumps)) / (max(final_df$pumps) - min(final_df$pumps))
 
@@ -1405,13 +1301,11 @@ final_predictions <- predict(final_multinom_model, newdata = test_data, type = "
 final_accuracy <- mean(final_predictions == test_data$condition)
 print(paste("Test Set Accuracy:", final_accuracy))
 
-```
 
 ### Stage 2: SVM, RF, ANN, XGBoost
-
+'
 We first load the data preprocessed from python. The python preprocessing was done useing the following code:
-
-```{r echo=FALSE}
+'
 # we first load the data preprocessed from python. The python preprocessing was done useing the following code:
 # d = df.groupby(['participant', 'condition', 'p_burst']).agg({
 #         'total': 'max',
@@ -1434,10 +1328,8 @@ We first load the data preprocessed from python. The python preprocessing was do
 # d['PB'] = standardize(d['p_burst'])
 # d['pC_s'] = standardize(d['pC'])
 # d['C'] = 30 - d['explosion_sum']
-```
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-completed_data <- read.csv('C:\\Users\\ACER\\Downloads\\data_preprocessed2.csv', header = T)
+completed_data <- read.csv('data_preprocessed2.csv', header = T)
 completed_data$block <- NULL
 completed_data$session <- as.factor(completed_data$session)
 completed_data$participant <- as.factor(completed_data$participant)
@@ -1455,15 +1347,9 @@ completed_data <- cbind(completed_data, participant_dummies)
 completed_data <- cbind(completed_data, session3)
 
 str(completed_data)
-```
 
 
 #### ANN
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-# Load required libraries
-library(neuralnet)
-library(caret)
 
 # Data Preparation
 # Convert all factors to dummy variables
@@ -1543,14 +1429,9 @@ final_test_rmse <- sqrt(mean((final_predicted_values - final_actual_values)^2))
 
 # Print final RMSE on test set
 print(paste("Final RMSE on test set:", final_test_rmse))
-```
+
 
 ### SVM
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-# Load required libraries
-library(caret)
-library(e1071)  # Package for SVM training
 
 # Data Preparation
 # Convert all factors to dummy variables
@@ -1602,11 +1483,8 @@ test_rmse <- sqrt(mean((test_predictions - test_data$TR)^2))
 # Print final RMSE on the test set
 print(paste("Final RMSE on test set:", test_rmse))
 
-```
-#### Linear Regression
 
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(caret)
+#### Linear Regression
 
 # Remove the TR.1 column from train_data and test_data if such a column exists
 train_data <- train_data[, !names(train_data) %in% "TR.1"]
@@ -1700,14 +1578,8 @@ ggplot(top_vars, aes(x = reorder(Variable, TransformedCoefficient), y = Transfor
   theme(axis.text.x = element_text(angle = 0, hjust = 1))
 
 
-```
 
-
-#### Random Forest
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(caret)
-library(randomForest)
+### Random Forest
 
 # Define training control using 10-fold cross-validation
 train_control <- trainControl(
@@ -1792,14 +1664,7 @@ varImpPlot(final_rf_model)
 print(summary(final_rf_model))
 
 
-```
-
 #### XGBoost
-
-
-```{r echo=FALSE, message=TRUE, warning=FALSE, paged.print=TRUE}
-library(caret)
-library(xgboost)
 
 numeric_data <- model.matrix(~ . - 1, data = completed_data)
 TR_vector <- completed_data$TR
@@ -1861,6 +1726,3 @@ test_rmse <- sqrt(mean((test_predictions - test_data$TR)^2))
 
 # Print final RMSE on test set
 print(paste("Final RMSE on test set:", test_rmse))
-```
-
-
